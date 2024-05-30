@@ -286,9 +286,14 @@ extension Reducer {
   ///         return .none
   ///       }
   ///     }
-  ///     .subscribe(using: \.number, to: numberFactStream, on: \.task, with: \.receive) { numberFact in
-  ///       "\(numberFact) Appended with my custom transformation."
-  ///     }
+  ///     .subscribe(
+  ///       to: numberFactStream,
+  ///       using: \.number,
+  ///       on: \.task,
+  ///       with: \.receiveNumberFact
+  ///      ) { numberFact in
+  ///        "\(numberFact) Appended with my custom transformation."
+  ///      }
   ///   }
   /// }
   /// ```
@@ -513,6 +518,7 @@ public struct _SubscribeReducer<Parent: Reducer, TriggerAction, StreamElement, V
 	@usableFromInline
 	let transform: (StreamElement) -> Value
 
+  @usableFromInline
 	init(
 		parent: Parent,
 		on triggerAction: CaseKeyPath<Parent.Action, TriggerAction>,

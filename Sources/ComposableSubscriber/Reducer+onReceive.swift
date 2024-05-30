@@ -3,15 +3,26 @@ import OSLog
 
 extension Reducer {
   
-  @inlinable
-  public func onReceive<V>(
+  @usableFromInline
+  func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, V>,
-    set setAction: @escaping (inout State, V) -> Effect<Action>
-  ) -> _ReceiveReducer<Self, V> {
+    set setAction: SetAction<State, Action, V>
+  ) -> _OnReceiveReducer<Self, V> {
     .init(
       parent: self,
       receiveAction: { AnyCasePath(toReceiveAction).extract(from: $0) },
       setAction: setAction
+    )
+  }
+  
+  @inlinable
+  public func onReceive<V>(
+    action toReceiveAction: CaseKeyPath<Action, V>,
+    set setAction: @escaping (inout State, V) -> Effect<Action>
+  ) -> _OnReceiveReducer<Self, V> {
+    self.onReceive(
+      action: toReceiveAction,
+      set: .operation(f: setAction)
     )
   }
 
@@ -19,39 +30,46 @@ extension Reducer {
   public func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, V>,
     set setAction: @escaping (inout State, V) -> Void
-  ) -> _ReceiveReducer<Self, V> {
-    .init(
-      parent: self,
-      receiveAction: { AnyCasePath(toReceiveAction).extract(from: $0) },
-      setAction: { state, value in
+  ) -> _OnReceiveReducer<Self, V> {
+    self.onReceive(
+      action: toReceiveAction,
+      set: .operation(f: { state, value in
         setAction(&state, value)
         return .none
-      }
+      })
     )
   }
 
   @inlinable
   public func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, V>,
-    set toStateKeyPath: WritableKeyPath<State, V>
-  ) -> _ReceiveReducer<Self, V> {
-    self.onReceive(action: toReceiveAction, set: toStateKeyPath.callAsFunction(root:value:))
+    set toStateKeyPath: WritableKeyPath<State, V>,
+    effect: Effect<Action> = .none
+  ) -> _OnReceiveReducer<Self, V> {
+    self.onReceive(
+      action: toReceiveAction,
+      set: .keyPath(toStateKeyPath, effect: effect)
+    )
   }
   
   @inlinable
   public func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, V>,
-    set toStateKeyPath: WritableKeyPath<State, V?>
-  ) -> _ReceiveReducer<Self, V> {
-    self.onReceive(action: toReceiveAction, set: toStateKeyPath.callAsFunction(root:value:))
+    set toStateKeyPath: WritableKeyPath<State, V?>,
+    effect: Effect<Action> = .none
+  ) -> _OnReceiveReducer<Self, V> {
+    self.onReceive(
+      action: toReceiveAction,
+      set: .optionalKeyPath(toStateKeyPath, effect: effect)
+    )
   }
   
-  @inlinable
-  public func onReceive<V>(
+  @usableFromInline
+  func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, TaskResult<V>>,
     onFail: OnFailAction<State, Action>? = nil,
-    onSuccess setAction: @escaping (inout State, V) -> Void
-  ) -> _ReceiveReducer<Self, TaskResult<V>> {
+    onSuccess setAction: SetAction<State, Action, V>
+  ) -> _OnReceiveReducer<Self, TaskResult<V>> {
     self.onReceive(action: toReceiveAction) { state, result in
       switch result {
       case let .failure(error):
@@ -60,50 +78,50 @@ extension Reducer {
         }
         return .none
       case let .success(value):
-        setAction(&state, value)
-        return .none
+        return setAction(state: &state, value: value)
       }
     }
+  }
+  
+  @inlinable
+  public func onReceive<V>(
+    action toReceiveAction: CaseKeyPath<Action, TaskResult<V>>,
+    onSuccess setAction: @escaping (inout State, V) -> Void,
+    onFail: OnFailAction<State, Action>? = nil
+  ) -> _OnReceiveReducer<Self, TaskResult<V>> {
+    self.onReceive(
+      action: toReceiveAction,
+      onFail: onFail,
+      onSuccess: .operation(setAction)
+    )
   }
   
   @inlinable
   public func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, TaskResult<V>>,
     set toStateKeyPath: WritableKeyPath<State, V>,
-    onFail: OnFailAction<State, Action>? = nil
-  ) -> _ReceiveReducer<Self, TaskResult<V>> {
-    self.onReceive(action: toReceiveAction) { state, result in
-      switch result {
-      case let .failure(error):
-        if let onFail {
-          return onFail(state: &state, error: error)
-        }
-        return .none
-      case let .success(value):
-        toStateKeyPath(root: &state, value: value)
-        return .none
-      }
-    }
+    onFail: OnFailAction<State, Action>? = nil,
+    effect: Effect<Action> = .none
+  ) -> _OnReceiveReducer<Self, TaskResult<V>> {
+     self.onReceive(
+      action: toReceiveAction,
+      onFail: onFail,
+      onSuccess: .keyPath(toStateKeyPath, effect: effect)
+    )
   }
   
   @inlinable
   public func onReceive<V>(
     action toReceiveAction: CaseKeyPath<Action, TaskResult<V>>,
     set toStateKeyPath: WritableKeyPath<State, V?>,
-    onFail: OnFailAction<State, Action>? = nil
-  ) -> _ReceiveReducer<Self, TaskResult<V>> {
-    self.onReceive(action: toReceiveAction) { state, result in
-      switch result {
-      case let .failure(error):
-        if let onFail {
-          return onFail(state: &state, error: error)
-        }
-        return .none
-      case let .success(value):
-        toStateKeyPath(root: &state, value: value)
-        return .none
-      }
-    }
+    onFail: OnFailAction<State, Action>? = nil,
+    effect: Effect<Action> = .none
+  ) -> _OnReceiveReducer<Self, TaskResult<V>> {
+     self.onReceive(
+      action: toReceiveAction,
+      onFail: onFail,
+      onSuccess: .optionalKeyPath(toStateKeyPath, effect: effect)
+    )
   }
 
   @inlinable
@@ -126,7 +144,7 @@ extension Reducer where Action: ReceiveAction {
   @inlinable
   public func receive<TriggerAction, Value>(
     on triggerAction: CaseKeyPath<Action, TriggerAction>,
-    with embedCasePath: CaseKeyPath<Action.ReceiveAction, Value>,
+    case embedCasePath: CaseKeyPath<Action.ReceiveAction, Value>,
     result resultHandler: @escaping @Sendable () async throws -> Value
   ) -> _ReceiveOnTriggerReducer<Self, TriggerAction, Action.ReceiveAction> {
     .init(
@@ -142,16 +160,7 @@ extension Reducer where Action: ReceiveAction {
   }
 }
 
-extension WritableKeyPath {
-
-  @usableFromInline
-  func callAsFunction(root: inout Root, value: Value) {
-    root[keyPath: self] = value
-  }
-  
-}
-
-public struct _ReceiveReducer<Parent: Reducer, Value>: Reducer {
+public struct _OnReceiveReducer<Parent: Reducer, Value>: Reducer {
   
   @usableFromInline
   let parent: Parent
@@ -160,13 +169,13 @@ public struct _ReceiveReducer<Parent: Reducer, Value>: Reducer {
   let receiveAction: (Parent.Action) -> Value?
 
   @usableFromInline
-  let setAction: (inout Parent.State, Value) -> Effect<Parent.Action>
+  let setAction: SetAction<Parent.State, Parent.Action, Value>
 
   @usableFromInline
   init(
     parent: Parent,
     receiveAction: @escaping (Parent.Action) -> Value?,
-    setAction: @escaping (inout Parent.State, Value) -> Effect<Parent.Action>
+    setAction: SetAction<Parent.State, Parent.Action, Value>
   ) {
     self.parent = parent
     self.receiveAction = receiveAction
@@ -182,7 +191,7 @@ public struct _ReceiveReducer<Parent: Reducer, Value>: Reducer {
     var setEffects = Effect<Action>.none
 
     if let value = receiveAction(action) {
-      setEffects = setAction(&state, value)
+      setEffects = setAction(state: &state, value: value)
     }
     
     return .merge(baseEffects, setEffects)

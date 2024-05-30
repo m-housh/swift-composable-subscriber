@@ -127,29 +127,16 @@ struct ReducerWithReceiveAction {
         return .none
       }
     }
-    .receive(on: \.task, with: \.currentNumber) {
+    .receive(on: \.task, case: \.currentNumber) {
       try await numberClient.currentNumber()
     }
-
-//    Reduce<State, Action> { state, action in
-//      switch action {
-//
-//      case .receive:
-//        return .none
-//
-//      case .task:
-//        return .receive(\.currentNumber) {
-//          try await numberClient.currentNumber()
-//        }
-//      }
-//    }
   }
 
 }
 
-@MainActor
 final class TCAExtrasTests: XCTestCase {
 
+  @MainActor
   func testSubscribeWithArg() async throws {
     let store = TestStore(
       initialState: ReducerWithArg.State(number: 19),
@@ -167,6 +154,7 @@ final class TCAExtrasTests: XCTestCase {
     await store.finish()
   }
   
+  @MainActor
   func testSubscribeWithArgAndTransform() async throws {
     let store = TestStore(
       initialState: ReducerWithTransform.State(number: 10),
@@ -184,6 +172,7 @@ final class TCAExtrasTests: XCTestCase {
     await store.finish()
   }
 
+  @MainActor
   func testReceiveAction() async throws {
     let store = TestStore(
       initialState: ReducerWithReceiveAction.State(number: 19),
@@ -193,7 +182,7 @@ final class TCAExtrasTests: XCTestCase {
     }
 
     let task = await store.send(.task)
-    await store.receive(\.receive) {
+    await store.receive(\.receive.success.currentNumber) {
       $0.currentNumber = 69420
     }
 
