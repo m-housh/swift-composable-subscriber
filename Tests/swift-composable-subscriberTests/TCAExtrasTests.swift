@@ -6,6 +6,16 @@ import XCTest
 struct NumberClient {
   var numberStreamWithoutArg: @Sendable () async -> AsyncStream<Int> = { .never }
   var numberStreamWithArg: @Sendable (Int) async -> AsyncStream<Int> = { _ in .never }
+  var currentNumber: @Sendable () async throws -> Int
+
+  func currentNumber(fail: Bool = false) async throws -> Int {
+    if fail {
+      struct CurrentNumberError: Error { }
+      throw CurrentNumberError()
+    }
+    return try await currentNumber()
+  }
+
 }
 
 extension NumberClient: TestDependencyKey {
@@ -23,7 +33,8 @@ extension NumberClient: TestDependencyKey {
           continuation.yield(number)
           continuation.finish()
         }
-      }
+      },
+      currentNumber: { 69420 }
     )
   }
   
@@ -91,9 +102,51 @@ struct ReducerWithTransform {
   }
 }
 
+@Reducer
+struct ReducerWithReceiveAction {
+  typealias State = NumberState
+
+  enum Action: ReceiveAction {
+
+    case receive(TaskResult<ReceiveAction>)
+    case task
+
+    @CasePathable
+    enum ReceiveAction {
+      case currentNumber(Int)
+    }
+  }
+
+  @Dependency(\.numberClient) var numberClient
+
+  public var body: some Reducer<State, Action> {
+    ReceiveReducer(onFail: .fail()) { state, action in
+      switch action {
+      case let .currentNumber(number):
+        state.currentNumber = number
+        return .none
+      }
+    }
+
+    Reduce<State, Action> { state, action in
+      switch action {
+
+      case .receive:
+        return .none
+
+      case .task:
+        return .receive(\.currentNumber) {
+          try await numberClient.currentNumber()
+        }
+      }
+    }
+  }
+
+}
+
 @MainActor
-final class swift_composable_subscriberTests: XCTestCase {
-  
+final class TCAExtrasTests: XCTestCase {
+
   func testSubscribeWithArg() async throws {
     let store = TestStore(
       initialState: ReducerWithArg.State(number: 19),
@@ -127,5 +180,22 @@ final class swift_composable_subscriberTests: XCTestCase {
     await task.cancel()
     await store.finish()
   }
-    
+
+  func testReceiveAction() async throws {
+    let store = TestStore(
+      initialState: ReducerWithReceiveAction.State(number: 19),
+      reducer: ReducerWithReceiveAction.init
+    ) {
+      $0.numberClient = .live
+    }
+
+    let task = await store.send(.task)
+    await store.receive(\.receive) {
+      $0.currentNumber = 69420
+    }
+
+    await task.cancel()
+    await store.finish()
+  }
+
 }
