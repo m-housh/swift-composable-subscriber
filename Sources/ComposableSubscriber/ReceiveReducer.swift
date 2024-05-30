@@ -105,33 +105,41 @@ extension Reducer {
       }
     }
   }
-}
 
-public enum OnFailAction<State, Action> {
-  case fail(prefix: String? = nil, log: ((String) -> Void)? = nil)
-  case handle((inout State, Error) -> Void)
- 
-  @available(macOS 11.0, iOS 14.0, watchOS 7.0, tvOS 14.0, *)
   @inlinable
-  static func fail(prefix: String? = nil, logger: Logger) -> Self {
-    .fail(prefix: prefix, log: { logger.error("\($0)") })
-  } 
-
-  @usableFromInline
-  func callAsFunction(state: inout State, error: Error) -> Effect<Action> {
-    switch self {
-    case let .fail(prefix, log):
-      if let prefix {
-        return .fail(prefix: prefix, error: error, log: log)
-      } else {
-        return .fail(error: error, log: log)
-      }
-    case let .handle(handler):
-      handler(&state, error)
-      return .none
-    }
+  public func receive<TriggerAction, Value>(
+    on triggerAction: CaseKeyPath<Action, TriggerAction>,
+    with receiveAction: CaseKeyPath<Action, TaskResult<Value>>,
+    result resultHandler: @escaping @Sendable () async throws -> Value
+  ) -> _ReceiveOnTriggerReducer<Self, TriggerAction, Value> {
+    .init(
+      parent: self,
+      triggerAction: { AnyCasePath(triggerAction).extract(from: $0) },
+      toReceiveAction: { AnyCasePath(receiveAction).embed($0) },
+      resultHandler: resultHandler
+    )
   }
 
+}
+
+extension Reducer where Action: ReceiveAction {
+  @inlinable
+  public func receive<TriggerAction, Value>(
+    on triggerAction: CaseKeyPath<Action, TriggerAction>,
+    with embedCasePath: CaseKeyPath<Action.ReceiveAction, Value>,
+    result resultHandler: @escaping @Sendable () async throws -> Value
+  ) -> _ReceiveOnTriggerReducer<Self, TriggerAction, Action.ReceiveAction> {
+    .init(
+      parent: self,
+      triggerAction: { AnyCasePath(triggerAction).extract(from: $0) },
+      toReceiveAction: { AnyCasePath(unsafe: Action.receive).embed($0) },
+      resultHandler: {
+        try await AnyCasePath(embedCasePath).embed(
+          resultHandler()
+        )
+      }
+    )
+  }
 }
 
 extension WritableKeyPath {
@@ -181,7 +189,11 @@ public struct _ReceiveReducer<Parent: Reducer, Value>: Reducer {
   }
 }
 
-public struct _OnRecieveReducer<Parent: Reducer, TriggerAction, Value>: Reducer {
+public struct _ReceiveOnTriggerReducer<
+  Parent: Reducer,
+  TriggerAction,
+  Value
+>: Reducer {
 
   @usableFromInline
   let parent: Parent
@@ -198,9 +210,9 @@ public struct _OnRecieveReducer<Parent: Reducer, TriggerAction, Value>: Reducer 
   @usableFromInline
   init(
     parent: Parent,
-    triggerAction: @escaping (Parent.Action) -> TriggerAction?,
-    toReceiveAction: @escaping (TaskResult<Value>) -> Parent.Action,
-    resultHandler: @escaping () -> Value
+    triggerAction: @escaping @Sendable (Parent.Action) -> TriggerAction?,
+    toReceiveAction: @escaping @Sendable (TaskResult<Value>) -> Parent.Action,
+    resultHandler: @escaping @Sendable () async throws -> Value
   ) {
     self.parent = parent
     self.triggerAction = triggerAction

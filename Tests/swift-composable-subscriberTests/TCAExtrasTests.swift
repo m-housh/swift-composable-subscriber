@@ -127,19 +127,22 @@ struct ReducerWithReceiveAction {
         return .none
       }
     }
-
-    Reduce<State, Action> { state, action in
-      switch action {
-
-      case .receive:
-        return .none
-
-      case .task:
-        return .receive(\.currentNumber) {
-          try await numberClient.currentNumber()
-        }
-      }
+    .receive(on: \.task, with: \.currentNumber) {
+      try await numberClient.currentNumber()
     }
+
+//    Reduce<State, Action> { state, action in
+//      switch action {
+//
+//      case .receive:
+//        return .none
+//
+//      case .task:
+//        return .receive(\.currentNumber) {
+//          try await numberClient.currentNumber()
+//        }
+//      }
+//    }
   }
 
 }
