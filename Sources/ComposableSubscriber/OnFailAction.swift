@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 
 public enum OnFailAction<State, Action> {
-  case fail(prefix: String? = nil, log: ((String) -> Void)? = nil)
+  case fail(prefix: String? = nil, log: (@Sendable (String) -> Void)? = nil)
   case operation((inout State, Error) -> Effect<Action>)
 
   @usableFromInline

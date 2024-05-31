@@ -188,13 +188,15 @@ public struct _OnReceiveReducer<Parent: Reducer, Value>: Reducer {
     action: Parent.Action
   ) -> Effect<Parent.Action> {
     let baseEffects = parent.reduce(into: &state, action: action)
-    var setEffects = Effect<Action>.none
-
-    if let value = receiveAction(action) {
-      setEffects = setAction(state: &state, value: value)
+    
+    guard let value = receiveAction(action) else {
+      return baseEffects
     }
     
-    return .merge(baseEffects, setEffects)
+    return .merge(
+      baseEffects,
+      setAction(state: &state, value: value)
+    )
   }
 }
 
@@ -208,13 +210,13 @@ public struct _ReceiveOnTriggerReducer<
   let parent: Parent
 
   @usableFromInline
-  let triggerAction: (Parent.Action) -> TriggerAction?
+  let triggerAction: @Sendable (Parent.Action) -> TriggerAction?
 
   @usableFromInline
-  let toReceiveAction: (TaskResult<Value>) -> Parent.Action
+  let toReceiveAction: @Sendable (TaskResult<Value>) -> Parent.Action
 
   @usableFromInline
-  let resultHandler: () async throws -> Value
+  let resultHandler: @Sendable () async throws -> Value
 
   @usableFromInline
   init(
@@ -242,11 +244,7 @@ public struct _ReceiveOnTriggerReducer<
 
     return .merge(
       baseEffects,
-      .run { send in
-        await send(toReceiveAction(
-          TaskResult { try await resultHandler() }
-        ))
-      }
+      .receive(operation: .init(embed: toReceiveAction, operation: resultHandler))
     )
   }
 }

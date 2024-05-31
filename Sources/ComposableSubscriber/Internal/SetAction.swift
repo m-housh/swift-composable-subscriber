@@ -30,3 +30,20 @@ enum SetAction<State, Action, Value> {
   }
  
 }
+
+@usableFromInline
+struct SetAction2<State, Action, Value> {
+  let operation: @Sendable (inout State, Value) -> Void
+  
+  init(_ operation: @escaping @Sendable (inout State, Value) -> Void) {
+    self.operation = operation
+  }
+  
+  static func keyPath(
+    _ keyPath: WritableKeyPath<State, Value>
+  ) -> Self {
+    .init({ state, value in
+      state[keyPath: keyPath] = value
+    })
+  }
+}
