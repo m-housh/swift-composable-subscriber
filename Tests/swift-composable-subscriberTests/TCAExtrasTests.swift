@@ -10,13 +10,14 @@ struct NumberClient {
 
   func currentNumber(fail: Bool = false) async throws -> Int {
     if fail {
-      struct CurrentNumberError: Error { }
       throw CurrentNumberError()
     }
     return try await currentNumber()
   }
 
 }
+
+struct CurrentNumberError: Error { }
 
 extension NumberClient: TestDependencyKey {
   
@@ -68,15 +69,22 @@ struct ReducerWithArg {
   @Dependency(\.numberClient) var numberClient
   
   var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case let .receive(currentNumber):
+        state.currentNumber = currentNumber
+        return .none
 
-    EmptyReducer()
-      .onReceive(action: \.receive, set: \.currentNumber)
-      .subscribe(
-        to: numberClient.numberStreamWithArg, 
-        using: \.number,
-        on: \.task,
-        with: \.receive
-      )
+      case .task:
+        return .none
+      }
+    }
+    .subscribe(
+      to: numberClient.numberStreamWithArg,
+      using: \.number,
+      on: \.task,
+      with: \.receive
+    )
   }
 }
 
@@ -85,20 +93,28 @@ struct ReducerWithTransform {
 
   typealias State = NumberState
   typealias Action = NumberAction
-  
+
   @Dependency(\.numberClient) var numberClient
-  
+
   var body: some Reducer<State, Action> {
-    EmptyReducer()
-      .onReceive(action: \.receive, set: \.currentNumber)
-      .subscribe(
-        to: numberClient.numberStreamWithArg,
-        using: \.number,
-        on: \.task,
-        with: \.receive
-      ) {
-        $0 * 2
+    Reduce { state, action in
+      switch action {
+      case let .receive(currentNumber):
+        state.currentNumber = currentNumber
+        return .none
+
+      case .task:
+        return .none
       }
+    }
+    .subscribe(
+      to: numberClient.numberStreamWithArg,
+      using: \.number,
+      on: \.task,
+      with: \.receive
+    ) {
+      $0 * 2
+    }
   }
 }
 
@@ -129,6 +145,44 @@ struct ReducerWithReceiveAction {
     }
     .receive(on: \.task, case: \.currentNumber) {
       try await numberClient.currentNumber()
+    }
+  }
+
+}
+
+@Reducer
+struct FailingReducer {
+
+  struct State: Equatable {
+    static func == (lhs: FailingReducer.State, rhs: FailingReducer.State) -> Bool {
+      lhs.error?.localizedDescription == rhs.error?.localizedDescription
+    }
+    
+    var error: Error?
+  }
+
+  enum Action: ReceiveAction {
+
+    case receive(TaskResult<ReceiveAction>)
+    case task
+
+    @CasePathable
+    enum ReceiveAction {
+      case currentNumber(Int)
+    }
+  }
+
+  @Dependency(\.numberClient) var numberClient
+
+  public var body: some Reducer<State, Action> {
+    ReceiveReducer(onFail: .set(keyPath: \.error)) { state, action in
+      switch action {
+      case .currentNumber(_):
+        return .none
+      }
+    }
+    .receive(on: \.task, case: \.currentNumber) {
+      try await numberClient.currentNumber(fail: true)
     }
   }
 
@@ -189,5 +243,25 @@ final class TCAExtrasTests: XCTestCase {
     await task.cancel()
     await store.finish()
   }
+  
+  @MainActor
+  func testFailEffect() async throws {
+
+    let store = TestStore(
+      initialState: FailingReducer.State(),
+      reducer: FailingReducer.init
+    ) {
+      $0.numberClient = .live
+    }
+
+    let task = await store.send(.task)
+    await store.receive(\.receive.failure) {
+      $0.error = CurrentNumberError()
+    }
+
+    await task.cancel()
+    await store.finish()
+  }
+
 
 }

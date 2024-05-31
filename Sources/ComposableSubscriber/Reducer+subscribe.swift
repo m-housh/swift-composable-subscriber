@@ -482,7 +482,7 @@ extension Reducer {
 }
 
 @usableFromInline
-enum Operation<Action, Value> {
+enum SubscribeOperation<Action, Value> {
 	case action(action: AnyCasePath<Action, Value>, animation: Animation?)
 	case operation(f: (_ send: Send<Action>, Value) async throws -> Void)
 }
@@ -513,7 +513,7 @@ public struct _SubscribeReducer<Parent: Reducer, TriggerAction, StreamElement, V
   let stream: Stream<Parent.State, StreamElement>
 
 	@usableFromInline
-	let operation: Operation<Parent.Action, Value>
+	let operation: SubscribeOperation<Parent.Action, Value>
 
 	@usableFromInline
 	let transform: (StreamElement) -> Value
@@ -523,7 +523,7 @@ public struct _SubscribeReducer<Parent: Reducer, TriggerAction, StreamElement, V
 		parent: Parent,
 		on triggerAction: CaseKeyPath<Parent.Action, TriggerAction>,
     to stream: Stream<Parent.State, StreamElement>,
-		with operation: Operation<Parent.Action, Value>,
+		with operation: SubscribeOperation<Parent.Action, Value>,
 		transform: @escaping @Sendable (StreamElement) -> Value
 	) {
 		self.parent = parent

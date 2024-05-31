@@ -11,6 +11,38 @@ extension Effect {
     }
   }
 
+  /// A convenience effect for sending an action that receives a task result from the given operation.
+  ///
+  /// ## Example
+  ///
+  /// ```swift
+  /// @Reducer
+  /// struct MyFeature {
+  ///   ...
+  ///   enum Action {
+  ///     case receive(TaskResult<Int>)
+  ///     case task
+  ///   }
+  ///
+  ///   @Dependency(\.numberClient) var numberClient
+  ///
+  ///   var body: some Reducer<State, Action> {
+  ///     Reduce { state, action in
+  ///       switch action {
+  ///         ...
+  ///         case .task:
+  ///           return .receive(action: \.receive) {
+  ///             try await numberClient.numberFact()
+  ///           }
+  ///       }
+  ///     }
+  ///   }
+  /// }
+  /// ```
+  ///
+  /// - Parameters:
+  ///   - action: The action to embed the task result in.
+  ///   - operation: The operation to call to create the task result.
   @inlinable
   public static func receive<T>(
     action toResult: CaseKeyPath<Action, TaskResult<T>>,
@@ -19,6 +51,42 @@ extension Effect {
     .receive(operation: .case(AnyCasePath(toResult), operation))
   }
   
+  /// A convenience effect for sending an action that receives a task result from the given operation and then
+  /// transforming the output of the operation.
+  ///
+  /// ## Example
+  ///
+  /// ```swift
+  /// @Reducer
+  /// struct MyFeature {
+  ///   ...
+  ///   enum Action {
+  ///     case receive(TaskResult<String>)
+  ///     case task
+  ///   }
+  ///
+  ///   @Dependency(\.numberClient) var numberClient
+  ///
+  ///   var body: some Reducer<State, Action> {
+  ///     Reduce { state, action in
+  ///       switch action {
+  ///         ...
+  ///         case .task:
+  ///           return .receive(action: \.receive) {
+  ///             try await numberClient.numberFact()
+  ///           } transform: { number in
+  ///             "The current number fact is: \(number)"
+  ///           }
+  ///       }
+  ///     }
+  ///   }
+  /// }
+  /// ```
+  ///
+  /// - Parameters:
+  ///   - action: The action to embed the task result in.
+  ///   - operation: The operation to call to create the task result.
+  ///   - transform: The operation used to transform the output of the operation.
   @inlinable
   public static func receive<T, V>(
     action toResult: CaseKeyPath<Action, TaskResult<V>>,
@@ -30,71 +98,53 @@ extension Effect {
 }
 
 extension Effect where Action: ReceiveAction {
-  
-  @inlinable
-  public static func receive<T>(
-    _ operation: @escaping @Sendable () async throws -> T,
-    transform: @escaping @Sendable (T) -> Action.ReceiveAction
-  ) -> Self {
-    .receive(operation: .case(AnyCasePath(unsafe: Action.receive), operation, transform))
-  }
 
+  /// A convenience effect for sending an action that receives a task result from the given operation and then
+  /// transforming the output of the operation.
+  ///
+  /// ## Example
+  ///
+  /// ```swift
+  /// @Reducer
+  /// struct MyFeature {
+  ///   ...
+  ///   enum Action: ReceiveAction {
+  ///     case receive(TaskResult<ReceiveAction>)
+  ///     case task
+  ///
+  ///     @CasePathable
+  ///     enum ReceiveAction {
+  ///       case numberFact(String)
+  ///     }
+  ///   }
+  ///
+  ///   @Dependency(\.numberClient) var numberClient
+  ///
+  ///   var body: some Reducer<State, Action> {
+  ///     Reduce { state, action in
+  ///       switch action {
+  ///         ...
+  ///         case .task:
+  ///           return .receive(\.numberFact) {
+  ///             try await numberClient.numberFact()
+  ///           }
+  ///       }
+  ///     }
+  ///   }
+  /// }
+  /// ```
+  ///
+  /// - Parameters:
+  ///   - action: The action to embed the task result in.
+  ///   - operation: The operation to call to create the task result.
   @inlinable
   public static func receive<T>(
     _ toReceiveAction: CaseKeyPath<Action.ReceiveAction, T>,
     _ operation: @escaping @Sendable () async throws -> T
   ) -> Self {
-    return .receive(operation) {
-      AnyCasePath(toReceiveAction).embed($0)
-    }
-  }
-}
-
-@usableFromInline
-struct ReceiveOperation<Action, Input, Result> {
-  
-  @usableFromInline
-  let embed: @Sendable (TaskResult<Result>) -> Action
-  
-  @usableFromInline
-  let operation: @Sendable () async throws -> Input
-  
-  @usableFromInline
-  let transform: @Sendable (Input) -> Result
-  
-  @usableFromInline
-  func callAsFunction(send: Send<Action>) async {
-    await send(embed(
-      TaskResult { try await operation() }
-        .map(transform)
+    self.receive(operation: .case(
+      AnyCasePath(toReceiveAction),
+      operation
     ))
-  }
-   
-  @usableFromInline
-  static func `case`(
-    _ casePath: AnyCasePath<Action, TaskResult<Result>>,
-    _ operation: @escaping @Sendable () async throws -> Input,
-    _ transform: @escaping @Sendable (Input) -> Result
-  ) -> Self {
-    .init(embed: { casePath.embed($0) }, operation: operation, transform: transform)
-  }
-}
-
-extension ReceiveOperation where Input == Result {
-  
-  @usableFromInline
-  init(
-    embed: @escaping @Sendable (TaskResult<Result>) -> Action,
-    operation: @escaping @Sendable () async throws -> Input
-  ) {
-    self.init(embed: embed, operation: operation, transform: { $0 })
-  }
-  
-  @usableFromInline
-  static func `case`(
-    _ casePath: AnyCasePath<Action, TaskResult<Result>>,
-    _ operation: @escaping @Sendable () async throws -> Input
-  ) -> Self {
-    .init(embed: { casePath.embed($0) }, operation: operation)
   }
 }
