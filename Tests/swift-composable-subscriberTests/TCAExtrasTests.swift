@@ -136,7 +136,7 @@ struct ReducerWithReceiveAction {
   @Dependency(\.numberClient) var numberClient
 
   public var body: some Reducer<State, Action> {
-    ReceiveReducer(onFail: .fail()) { state, action in
+    ReceiveReducer { state, action in
       switch action {
       case let .currentNumber(number):
         state.currentNumber = number
@@ -175,7 +175,7 @@ struct FailingReducer {
   @Dependency(\.numberClient) var numberClient
 
   public var body: some Reducer<State, Action> {
-    ReceiveReducer(onFail: .set(keyPath: \.error)) { state, action in
+    ReceiveReducer { state, action in
       switch action {
       case .currentNumber(_):
         return .none
@@ -184,6 +184,7 @@ struct FailingReducer {
     .receive(on: \.task, case: \.currentNumber) {
       try await numberClient.currentNumber(fail: true)
     }
+    .onFailure(.set(\.error))
   }
 
 }
@@ -239,7 +240,7 @@ final class TCAExtrasTests: XCTestCase {
     await store.receive(\.receive.success.currentNumber) {
       $0.currentNumber = 69420
     }
-
+    
     await task.cancel()
     await store.finish()
   }

@@ -14,13 +14,5 @@ public protocol ReceiveAction<ReceiveAction> {
   /// The root receive case that is used to handle the results.
   static func receive(_ result: TaskResult<ReceiveAction>) -> Self
 
-  /// Extracts the result from the action.
-  var result: TaskResult<ReceiveAction>? { get }
 }
 
-extension ReceiveAction {
-
-  public var result: TaskResult<ReceiveAction>? {
-    AnyCasePath(unsafe: Self.receive).extract(from: self)
-  }
-}

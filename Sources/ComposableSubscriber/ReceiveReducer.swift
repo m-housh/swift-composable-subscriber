@@ -24,7 +24,7 @@ import Foundation
 ///   @Dependency(\.logger) var logger
 ///
 ///   public var body: some ReducerOf<Self> {
-///     ReceiveReducer(onFail: .fail(logger: logger)) { state, action in
+///     ReceiveReducer { state, action in
 ///       // Handle the success cases by switching on the receive action.
 ///       switch action {
 ///       case let .numberFact(fact):
@@ -32,6 +32,8 @@ import Foundation
 ///         return .none
 ///       }
 ///     }
+///     .onFail(.log(logger: logger))
+///
 ///     ...
 ///   }
 ///
@@ -41,32 +43,25 @@ public struct ReceiveReducer<State, Action: ReceiveAction>: Reducer {
   let toResult: (Action) -> TaskResult<Action.ReceiveAction>?
 
   @usableFromInline
-  let onFail: OnFailAction<State, Action>
-
-  @usableFromInline
   let onSuccess: (inout State, Action.ReceiveAction) -> Effect<Action>
 
   @usableFromInline
   init(
     internal toResult: @escaping (Action) -> TaskResult<Action.ReceiveAction>?,
-    onFail: OnFailAction<State, Action>,
     onSuccess: @escaping(inout State, Action.ReceiveAction) -> Effect<Action>
   ) {
     self.toResult = toResult
-    self.onFail = onFail
     self.onSuccess = onSuccess
   }
 
   @inlinable
   public init(
-    onFail: OnFailAction<State, Action> = .ignore,
     onSuccess: @escaping (inout State, Action.ReceiveAction) -> Effect<Action>
   ) {
     self.init(
       internal: {
         AnyCasePath(unsafe: Action.receive).extract(from: $0)
       },
-      onFail: onFail,
       onSuccess: onSuccess
     )
   }
@@ -75,8 +70,8 @@ public struct ReceiveReducer<State, Action: ReceiveAction>: Reducer {
   public func reduce(into state: inout State, action: Action) -> Effect<Action> {
     guard let result = toResult(action) else { return .none }
     switch result {
-    case let .failure(error):
-      return onFail(state: &state, error: error)
+    case .failure:
+      return .none
     case let .success(value):
       return onSuccess(&state, value)
     }
